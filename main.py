@@ -1,13 +1,12 @@
 import os
-import discord
-from threading import Thread
-from flask import Flask
-
-from discord.ext import commands, tasks
-from discord import app_commands
-from discord.ext import commands
+import re
+import time
 from datetime import datetime
-import re, time
+from threading import Thread
+
+import discord
+from discord.ext import commands, tasks
+from flask import Flask
 
 # ================= FLASK SERVER =================
 app = Flask(__name__)
@@ -28,8 +27,6 @@ def keep_alive():
 keep_alive()
 
 # ================= CONFIG =================
-
-
 YELLOW_ROLE_NAME = "⚠️ Yellow Card"
 BLACK_ROLE_NAME = "⛔ Black Card"
 
@@ -87,10 +84,7 @@ def get_role_by_name(guild, name):
     return discord.utils.get(guild.roles, name=name)
 
 def is_spam(user_id):
-    """ตรวจสอบ spam ตาม user limit และ global limit"""
     now = time.time()
-
-    # User log
     logs = USER_MESSAGE_LOG.get(user_id, [])
     logs = [t for t in logs if now - t <= USER_WINDOW]
     if len(logs) >= USER_LIMIT:
@@ -98,7 +92,6 @@ def is_spam(user_id):
     logs.append(now)
     USER_MESSAGE_LOG[user_id] = logs
 
-    # Global log
     g_logs = GLOBAL_MESSAGE_LOG.get("all", [])
     g_logs = [t for t in g_logs if now - t <= GLOBAL_WINDOW]
     if len(g_logs) >= GLOBAL_LIMIT:
@@ -120,45 +113,35 @@ def has_banned_words(text):
     return any(w in t for w in BANNED_KEYWORDS)
 
 def ai_scam_score(text):
-    """ประเมินความเสี่ยง AI Scam"""
     score = 0
     t = text.lower()
-
-    # คีย์เวิร์ดต้องห้าม
     for word in BANNED_KEYWORDS:
         if word in t:
             score += 30
 
-    # ตรวจลิงก์ต้องสงสัย
     urls = URL_REGEX.findall(t)
     for url in urls:
         for bad in SUSPICIOUS_DOMAINS:
             if bad in url:
                 score += 50
 
-    # ตรวจ mentions
     mention_count = text.count("@")
     if "@everyone" in text or "@here" in text:
         score += 20
     elif mention_count > MAX_MENTIONS:
         score += 10
 
-    # ความยาวข้อความ
     if len(text) > 300:
         score += 10
 
     return min(score, 100)
 
 def create_log_embed(title, user, reason, staff, color):
-    embed = discord.Embed(
-        title=title,
-        color=color,
-        timestamp=datetime.utcnow()
-    )
+    embed = discord.Embed(title=title, color=color, timestamp=datetime.utcnow())
     embed.add_field(name="👤 ผู้ใช้", value=f"{user} ({user.id})", inline=False)
     embed.add_field(name="📝 เหตุผล", value=reason, inline=False)
     embed.add_field(name="🛡 ผู้ดำเนินการ", value=f"{staff} ({staff.id})", inline=False)
-    embed.set_thumbnail(url=user.avatar.url if user.avatar else user.default_avatar.url)
+    embed.set_thumbnail(url=user.display_avatar.url)
     embed.set_footer(text="Security System")
     return embed
 
@@ -178,12 +161,10 @@ async def log_ban(guild, user, reason, staff):
         await ch.send(embed=create_log_embed("🔴 BAN | ใบดำ", user, reason, staff, 0xff0000))
 
 async def punish(member, reason):
-    """จัดการ warn/ban อัตโนมัติ"""
     guild = member.guild
     USER_WARNINGS[member.id] = USER_WARNINGS.get(member.id, 0) + 1
     count = USER_WARNINGS[member.id]
 
-    # บันทึกประวัติ
     USER_WARNINGS_HISTORY.setdefault(member.id, []).append({
         "time": int(time.time()),
         "reason": reason
@@ -204,140 +185,6 @@ async def punish(member, reason):
         await member.ban(reason="ครบ 3 ใบเหลือง (Black Card)", delete_message_days=1)
         return True
 
-
-# ================= MODAL =================
-class AnnouncementModal(discord.ui.Modal):
-    message = discord.ui.TextInput(label="ข้อความประกาศ", style=discord.TextStyle.paragraph)
-
-    def __init__(self, template, roles, channel, author):
-        super().__init__(title="📝 ส่งประกาศ")
-        self.template = template
-        self.roles = roles
-        self.channel = channel  # ต้องเป็น TextChannel object
-        self.author = author
-
-    async def on_submit(self, interaction: discord.Interaction):
-        text = self.message.value
-        member = interaction.user
-
-        # ตรวจ spam / AI risk
-        spam, reason = is_spam(member.id)
-        risk = ai_scam_score(text)
-        if spam or has_suspicious_link(text) or has_mass_mention(text) or has_banned_words(text) or risk >= 50:
-            await interaction.response.send_message(
-                f"🚫 ระบบป้องกันอัตโนมัติ Block / Risk={risk}%",
-                ephemeral=True
-            )
-            await punish(member, f"AI Risk {risk}% / Spam / Link / MassMention")
-            await log_spam(interaction.guild, member, f"AI Risk {risk}% / Spam / Link / MassMention", member)
-            return
-
-        mention_text = " ".join(r.mention for r in self.roles)
-        embed = discord.Embed(
-            title=self.template["title"],
-            description=text,
-            color=self.template["color"],
-            timestamp=datetime.utcnow()
-        )
-        embed.set_author(name=str(member), icon_url=member.display_avatar.url)
-        embed.set_image(url=self.template["image"])
-
-        view = ConfirmView(member, embed, mention_text, self.channel)
-        await interaction.response.send_message("📢 Preview ประกาศ", embed=embed, view=view, ephemeral=True)
-
-
-# ================= CONFIRM =================
-class ConfirmView(discord.ui.View):
-    def __init__(self, author, embed, mention, channel):
-        super().__init__(timeout=None)  # ไม่มี timeout
-        self.author = author
-        self.embed = embed
-        self.mention = mention
-        self.channel = channel  # ต้องเป็น TextChannel object
-
-    @discord.ui.button(label="✅ Confirm", style=discord.ButtonStyle.success)
-    async def confirm(self, interaction: discord.Interaction, _):
-        if interaction.user != self.author:
-            return
-
-        now = time.time()
-        last = CONFIRM_COOLDOWN.get(interaction.user.id, 0)
-        if now - last < CONFIRM_DELAY:
-            await interaction.response.send_message("⏳ กรุณารอ", ephemeral=True)
-            return
-
-        CONFIRM_COOLDOWN[interaction.user.id] = now
-        await self.channel.send(content=self.mention, embed=self.embed)
-        await interaction.response.edit_message(content="✔ ส่งเรียบร้อย", view=None, embed=None)
-
-
-# ================= SELECT =================
-class RoleSelect(discord.ui.Select):
-    def __init__(self, template, channel):
-        options = [
-            discord.SelectOption(label=role.name, value=str(role.id))
-            for role in template["guild"].roles if role != template["guild"].default_role
-        ]
-        super().__init__(
-            placeholder="เลือก Role ที่ต้องการ Tag (หลายตัวได้)",
-            min_values=0, max_values=len(options), options=options
-        )
-        self.template = template
-        self.channel = channel  # ต้องเป็น TextChannel object
-
-    async def callback(self, interaction: discord.Interaction):
-        roles = [interaction.guild.get_role(int(rid)) for rid in self.values if interaction.guild.get_role(int(rid))]
-        if not roles:
-            await interaction.response.send_message("❌ ไม่มี Role ที่เลือก", ephemeral=True)
-            return
-
-        modal = AnnouncementModal(self.template, roles, self.channel, interaction.user)
-        await interaction.response.send_modal(modal)
-
-
-class TemplateSelect(discord.ui.Select):
-    def __init__(self):
-        super().__init__(
-            placeholder="เลือก Template",
-            options=[
-                discord.SelectOption(label="ข่าวด่วน", value="urgent"),
-                discord.SelectOption(label="ข่าวกิจกรรม", value="event"),
-                discord.SelectOption(label="แจ้งเตือน", value="notice")
-            ]
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        template = TEMPLATES[self.values[0]]
-        template["guild"] = interaction.guild
-
-        view = discord.ui.View(timeout=None)
-        view.add_item(ChannelSelect(template))
-        await interaction.response.send_message("เลือกช่องประกาศ", view=view, ephemeral=True)
-
-
-class ChannelSelect(discord.ui.ChannelSelect):
-    def __init__(self, template):
-        super().__init__(channel_types=[discord.ChannelType.text])
-        self.template = template
-
-    async def callback(self, interaction: discord.Interaction):
-        channel_obj = interaction.guild.get_channel(self.values[0].id)
-        if not channel_obj:
-            await interaction.response.send_message("❌ ไม่พบช่องนี้", ephemeral=True)
-            return
-
-        view = discord.ui.View(timeout=None)
-        role_select = RoleSelect(self.template, channel_obj)
-        view.add_item(role_select)
-        await interaction.response.send_message("เลือก Role ที่ต้องการ Tag", view=view, ephemeral=True)
-
-
-class AnnouncementView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(TemplateSelect())
-
-
 # ================= ON_MESSAGE AUTO PROTECT =================
 @bot.event
 async def on_message(message: discord.Message):
@@ -357,7 +204,6 @@ async def on_message(message: discord.Message):
 
         await log_spam(guild, member, f"Auto Detect | AI Risk {risk}% | Message blocked", bot.user)
         await punish(member, f"Auto Detect | AI Risk {risk}%")
-
         try:
             await member.send(f"🚨 ข้อความของคุณถูกลบ\nเหตุผล: AI Scam Risk {risk}%")
         except:
@@ -379,50 +225,6 @@ async def reset_warns():
             USER_WARNINGS_HISTORY[user_id] = []
             print(f"Reset warn ของ user_id={user_id}")
 
-# ================= SLASH COMMAND =================
-# !ane คำสั่งประกาศสำหรับ Admin
-@bot.command(name="ane")
-@commands.has_permissions(administrator=True)
-async def ane(ctx):
-    """📢 ส่งประกาศ (Admin เท่านั้น)"""
-    await ctx.send("🛠 Admin Announcement Panel", view=AnnouncementView())
-
-
-@bot.tree.command(name="warnings", description="📋 ดูประวัติ warn/ban ของสมาชิก (Admin)")
-@app_commands.describe(member="เลือกสมาชิก")
-@app_commands.checks.has_permissions(administrator=True)
-async def warnings(interaction: discord.Interaction, member: discord.Member):
-    user_id = member.id
-    warns = USER_WARNINGS.get(user_id, 0)
-
-    yellow_role = get_role_by_name(interaction.guild, YELLOW_ROLE_NAME)
-    black_role = get_role_by_name(interaction.guild, BLACK_ROLE_NAME)
-    roles = []
-    if yellow_role and yellow_role in member.roles:
-        roles.append("⚠️ Yellow Card")
-    if black_role and black_role in member.roles:
-        roles.append("⛔ Black Card")
-    roles_text = ", ".join(roles) if roles else "ไม่มี"
-
-    history = USER_WARNINGS_HISTORY.get(member.id, [])
-    history_text = "\n".join(
-        f"{datetime.fromtimestamp(h['time']).strftime('%d/%m/%Y')} - {h['reason']}"
-        for h in history[-5:]
-    ) or "ไม่มีประวัติ"
-
-    embed = discord.Embed(
-        title=f"📋 ประวัติ Warn / Ban ของ {member}",
-        color=0x00aaff,
-        timestamp=datetime.utcnow()
-    )
-    embed.add_field(name="จำนวน Warn", value=f"{warns} ครั้ง", inline=False)
-    embed.add_field(name="สถานะ Role", value=roles_text, inline=False)
-    embed.add_field(name="ประวัติล่าสุด", value=history_text, inline=False)
-    embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
-    embed.set_footer(text="Security System")
-
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
 # ================= READY =================
 @bot.event
 async def on_ready():
@@ -432,11 +234,4 @@ async def on_ready():
     print(f"Bot online as {bot.user}")
 
 # ================= RUN =================
-
 bot.run(os.getenv("TOKEN"))
-
-
-
-
-
-
