@@ -34,9 +34,9 @@ LOG_WARN_CHANNEL = "warn-log"
 LOG_BAN_CHANNEL = "ban-log"
 LOG_SPAM_CHANNEL = "spam-log"
 
-CONFIRM_DELAY = 60           # Cooldown สำหรับ Confirm ประกาศ
-RESET_INTERVAL = 24 * 60 * 60  # ตรวจทุก 24 ชั่วโมง
-WARN_RESET_DAYS = 30         # จำนวนวันก่อน reset warn
+CONFIRM_DELAY = 60
+RESET_INTERVAL = 24 * 60 * 60
+WARN_RESET_DAYS = 30
 
 # ================= INTENTS =================
 intents = discord.Intents.all()
@@ -280,14 +280,8 @@ class ChannelSelect(discord.ui.ChannelSelect):
             await interaction.response.send_message("❌ ไม่พบช่องนี้", ephemeral=True)
             return
 
-        # ปลอดภัยสุด ๆ: แปลง ID เป็น Channel Object
-        try:
-            channel_id = int(self.values[0])
-            channel_obj = interaction.guild.get_channel(channel_id)
-        except:
-            channel_obj = None
-
-        if not channel_obj or not isinstance(channel_obj, discord.TextChannel):
+        channel_obj = self.values[0]  # Channel object ได้ตรง ๆ
+        if not isinstance(channel_obj, discord.TextChannel):
             await interaction.response.send_message("❌ ช่องนี้ไม่ใช่ Text Channel", ephemeral=True)
             return
 
