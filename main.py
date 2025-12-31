@@ -1,10 +1,23 @@
 import os
 import discord
+import threading
+from flask import Flask
+
 from discord.ext import commands, tasks
 from discord import app_commands
 from datetime import datetime
 import re, time
 
+# ================= FLASK SERVER =================
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, use_reloader=False)
 
 # ================= CONFIG =================
 
@@ -394,4 +407,12 @@ async def on_ready():
     print(f"Bot online as {bot.user}")
 
 # ================= RUN =================
+if __name__ == "__main__":
+    # 🔥 เปิด Flask ก่อน (Render scan เจอ port)
+    threading.Thread(target=run_flask, daemon=True).start()
+
+    # 🤖 แล้วค่อยรัน Discord bot
+    bot.run(os.getenv("TOKEN"))
+
 bot.run(os.getenv("TOKEN"))
+
