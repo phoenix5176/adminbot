@@ -365,7 +365,7 @@ async def reset_warns():
             print(f"Reset warn ของ user_id={user_id}")
 
 # ================= SLASH COMMAND =================
-@bot.tree.command(name="announce", description="📢 ส่งประกาศ (Admin เท่านั้น)")
+@bot.tree.command(name="ane", description="📢 ส่งประกาศ (Admin เท่านั้น)")
 @app_commands.checks.has_permissions(administrator=True)
 async def announce(interaction: discord.Interaction):
     await interaction.response.send_message("🛠 Admin Announcement Panel", view=AnnouncementView(), ephemeral=True)
@@ -416,5 +416,6 @@ async def on_ready():
 # ================= RUN =================
 
 bot.run(os.getenv("TOKEN"))
+
 
 
