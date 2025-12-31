@@ -337,85 +337,6 @@ class AnnouncementView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(TemplateSelect())
 
-# ================= CONFIRM =================
-class ConfirmView(discord.ui.View):
-    def __init__(self, author, embed, mention, channel):
-        super().__init__(timeout=300)
-        self.author = author
-        self.embed = embed
-        self.mention = mention
-        self.channel = channel
-
-    @discord.ui.button(label="✅ Confirm", style=discord.ButtonStyle.success)
-    async def confirm(self, interaction: discord.Interaction, _):
-        if interaction.user != self.author:
-            return
-
-        now = time.time()
-        last = CONFIRM_COOLDOWN.get(interaction.user.id, 0)
-        if now - last < CONFIRM_DELAY:
-            await interaction.response.send_message("⏳ กรุณารอ", ephemeral=True)
-            return
-
-        CONFIRM_COOLDOWN[interaction.user.id] = now
-        text_channel = interaction.guild.get_channel(int(self.channel.id))
-        await text_channel.send(content=self.mention, embed=self.embed)
-        await interaction.response.edit_message(content="✔ ส่งเรียบร้อย", view=None, embed=None)
-
-# ================= SELECT =================
-class RoleSelect(discord.ui.Select):
-    def __init__(self, template, channel):
-        options = [
-            discord.SelectOption(label=role.name, value=str(role.id))
-            for role in template["guild"].roles if role != template["guild"].default_role
-        ]
-        super().__init__(
-            placeholder="เลือก Role ที่ต้องการ Tag (หลายตัวได้)",
-            min_values=0, max_values=len(options), options=options
-        )
-        self.template = template
-        self.channel = channel
-
-    async def callback(self, interaction: discord.Interaction):
-        roles = [interaction.guild.get_role(int(rid)) for rid in self.values]
-        modal = AnnouncementModal(self.template, roles, self.channel, interaction.user)
-        await interaction.response.send_modal(modal)
-
-class TemplateSelect(discord.ui.Select):
-    def __init__(self):
-        super().__init__(
-            placeholder="เลือก Template",
-            options=[
-                discord.SelectOption(label="ข่าวด่วน", value="urgent"),
-                discord.SelectOption(label="ข่าวกิจกรรม", value="event"),
-                discord.SelectOption(label="แจ้งเตือน", value="notice")
-            ]
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        template = TEMPLATES[self.values[0]]
-        template["guild"] = interaction.guild
-
-        view = discord.ui.View(timeout=300)
-        view.add_item(ChannelSelect(template))
-        await interaction.response.send_message("เลือกช่องประกาศ", view=view, ephemeral=True)
-
-class ChannelSelect(discord.ui.ChannelSelect):
-    def __init__(self, template):
-        super().__init__(channel_types=[discord.ChannelType.text])
-        self.template = template
-
-    async def callback(self, interaction: discord.Interaction):
-        channel = self.values[0]
-        view = discord.ui.View(timeout=300)
-        role_select = RoleSelect(self.template, channel)
-        view.add_item(role_select)
-        await interaction.response.send_message("เลือก Role ที่ต้องการ Tag", view=view, ephemeral=True)
-
-class AnnouncementView(discord.ui.View):
-    def __init__(self):
-        super().__init__()
-        self.add_item(TemplateSelect())
 
 # ================= ON_MESSAGE AUTO PROTECT =================
 @bot.event
@@ -513,6 +434,7 @@ async def on_ready():
 # ================= RUN =================
 
 bot.run(os.getenv("TOKEN"))
+
 
 
 
