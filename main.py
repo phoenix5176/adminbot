@@ -280,10 +280,15 @@ class ChannelSelect(discord.ui.ChannelSelect):
             await interaction.response.send_message("❌ ไม่พบช่องนี้", ephemeral=True)
             return
 
-        # แปลง ID เป็น Channel Object เพื่อป้องกันล้มเหลว
-        channel_obj = interaction.guild.get_channel(int(self.values[0].id)) if isinstance(self.values[0], discord.abc.Snowflake) else interaction.guild.get_channel(int(self.values[0]))
-        if not channel_obj:
-            await interaction.response.send_message("❌ ไม่พบช่องนี้", ephemeral=True)
+        # ปลอดภัยสุด ๆ: แปลง ID เป็น Channel Object
+        try:
+            channel_id = int(self.values[0])
+            channel_obj = interaction.guild.get_channel(channel_id)
+        except:
+            channel_obj = None
+
+        if not channel_obj or not isinstance(channel_obj, discord.TextChannel):
+            await interaction.response.send_message("❌ ช่องนี้ไม่ใช่ Text Channel", ephemeral=True)
             return
 
         view = discord.ui.View(timeout=None)
