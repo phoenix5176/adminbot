@@ -5,6 +5,7 @@ from flask import Flask
 
 from discord.ext import commands, tasks
 from discord import app_commands
+from discord.ext import commands
 from datetime import datetime
 import re, time
 
@@ -365,10 +366,13 @@ async def reset_warns():
             print(f"Reset warn ของ user_id={user_id}")
 
 # ================= SLASH COMMAND =================
-@bot.tree.command(name="ane", description="📢 ส่งประกาศ (Admin เท่านั้น)")
-@app_commands.checks.has_permissions(administrator=True)
-async def announce(interaction: discord.Interaction):
-    await interaction.response.send_message("🛠 Admin Announcement Panel", view=AnnouncementView(), ephemeral=True)
+# !ane คำสั่งประกาศสำหรับ Admin
+@bot.command(name="ane")
+@commands.has_permissions(administrator=True)
+async def ane(ctx):
+    """📢 ส่งประกาศ (Admin เท่านั้น)"""
+    await ctx.send("🛠 Admin Announcement Panel", view=AnnouncementView())
+
 
 @bot.tree.command(name="warnings", description="📋 ดูประวัติ warn/ban ของสมาชิก (Admin)")
 @app_commands.describe(member="เลือกสมาชิก")
@@ -416,6 +420,7 @@ async def on_ready():
 # ================= RUN =================
 
 bot.run(os.getenv("TOKEN"))
+
 
 
 
